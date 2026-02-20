@@ -1,0 +1,12 @@
+[Unit]
+Description=Claude Code audio notification server
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/sources/claude-hooks/server.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
