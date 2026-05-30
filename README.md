@@ -24,6 +24,7 @@ Options:
 |------|---------|-------------|
 | `--port` | `7331` | Port to listen on |
 | `--config` | `sounds.conf` | Event → sound mapping file |
+| `--notify-config` | `notify.conf` | Event → notification message file |
 
 ```bash
 ./server.py --port 8080
@@ -64,10 +65,11 @@ Claude Code hook event
     -> server.py (plays sound via mpv, optionally sends notify-send)
 ```
 
-At startup the server reads the event → sound mapping from `sounds.conf`, then
-plays a random sound from the matching event's list on each request.
-
-For `Notification` and `PermissionRequest` events, the server also sends a desktop notification via `notify-send`.
+At startup the server reads the event → sound mapping from `sounds.conf` and the
+event → notification mapping from `notify.conf`. On each request it plays a
+random sound for the event (if mapped) and/or sends a desktop notification (if
+mapped) via `notify-send`. The two are independent — an event can have a sound,
+a notification, both, or neither.
 
 ## Sounds
 
@@ -106,6 +108,18 @@ PreToolUse=
 #PostToolUse=...
 ```
 
+### notify.conf
+
+The event → desktop notification mapping, same conventions as `sounds.conf`.
+Each line is `EVENT=message`; the event fires a `notify-send` notification with
+that message as the body (title is always "Claude Code"). Empty value silences,
+commenting out disables. `Notification` and `PermissionRequest` ship enabled.
+
+```
+Notification=Claude has a notification
+#Stop=Claude is done
+```
+
 ### Custom port
 
 Set `CLAUDE_AUDIO_PORT` in the hook script's environment to match the server port:
@@ -120,7 +134,8 @@ CLAUDE_AUDIO_PORT=8080 ./hook.sh Notification
 |------|-------------|
 | `server.py` | HTTP server (plays sounds, sends notifications); `--hooks` installs the Claude Code hooks |
 | `hook.sh` | Thin curl wrapper called by Claude Code hooks |
-| `sounds.conf` | Event → sound mapping (source of truth) |
+| `sounds.conf` | Event → sound mapping |
+| `notify.conf` | Event → desktop notification mapping |
 | `claude-hooks.service` | systemd user service unit |
 | `packs/peon/sounds/` | Orc Peon `.wav` files referenced by `sounds.conf` |
 
@@ -132,7 +147,7 @@ GET /play?event=<name>
 
 | Response | Meaning |
 |----------|---------|
-| 200 | Sound played (and notification sent if applicable) |
-| 204 | Event unknown, unmapped, or silenced |
+| 200 | Sound and/or notification fired |
+| 204 | Event has no sound and no notification (unmapped or silenced) |
 | 404 | Unknown path |
-| 500 | mpv not installed |
+| 500 | mpv not installed (the notification, if any, is still sent) |

@@ -21,12 +21,13 @@ from urllib.parse import parse_qs, urlparse
 # event -> list of audio file paths (randomly picked on each play)
 sounds: dict[str, list[str]] = {}
 
+# event -> desktop notification message body
+notifications: dict[str, str] = {}
+
 # Relative sound paths in sounds.conf resolve against this directory.
 SOUNDS_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "packs", "peon", "sounds"
 )
-
-NOTIFY_EVENTS = {"Notification", "PermissionRequest"}
 
 # Claude Code hook events that --hooks wires up. Each fires
 # `hook.sh <event>` using the event name verbatim.
@@ -70,6 +71,25 @@ def load_config(path):
                 else:
                     print(f"  warning: {key}: file not found: {resolved}", file=sys.stderr)
             sounds[key] = files
+
+
+def load_notify_config(path):
+    """Load the event -> notification message mapping from notify.conf.
+
+    Each line is `EVENT=message`; the event fires a desktop notification with
+    that message as the body (title is always "Claude Code"). An empty value
+    silences it. Blank lines and lines starting with `#` are ignored, so
+    commenting out an event disables its notification.
+    """
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key:
+                notifications[key] = value.strip()
 
 
 def install_hooks(settings_path):
@@ -134,61 +154,63 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        if event in sounds and not sounds[event]:
-            log(f"  \033[90msilenced\033[0m {event}")
-            self.send_response(204)
-            self.end_headers()
-            return
+        sound_files = sounds.get(event)
+        message = notifications.get(event)
 
-        if event not in sounds:
-            log(f"  \033[33mignored\033[0m  {event} (unmapped)")
+        if not sound_files and not message:
+            if event in sounds or event in notifications:
+                log(f"  \033[90msilenced\033[0m {event}")
+            else:
+                log(f"  \033[33mignored\033[0m  {event} (unmapped)")
             self.send_response(204)
             self.end_headers()
             return
 
         global _last_play, _last_notify
         now = time.monotonic()
-
-        files = sounds[event]
-        path = random.choice(files)
-        filename = os.path.basename(path)
         actions = []
+        mpv_missing = False
 
-        if now - _last_play >= RATE_LIMIT:
-            _last_play = now
-            try:
-                subprocess.Popen(
-                    ["mpv", "--no-video", "--really-quiet", path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except FileNotFoundError:
-                log(f"  \033[31merror\033[0m    {event}: mpv not installed")
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(b"mpv not installed\n")
-                return
-            actions.append(f"\033[32mplay\033[0m     {event} -> {filename}")
-        else:
-            actions.append(f"\033[90mthrottle\033[0m {event} (audio)")
+        if sound_files:
+            if now - _last_play >= RATE_LIMIT:
+                _last_play = now
+                path = random.choice(sound_files)
+                try:
+                    subprocess.Popen(
+                        ["mpv", "--no-video", "--really-quiet", path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    actions.append(f"\033[32mplay\033[0m     {event} -> {os.path.basename(path)}")
+                except FileNotFoundError:
+                    # Don't let a missing mpv suppress the notification below.
+                    mpv_missing = True
+                    actions.append(f"\033[31merror\033[0m    {event}: mpv not installed")
+            else:
+                actions.append(f"\033[90mthrottle\033[0m {event} (audio)")
 
-        if event in NOTIFY_EVENTS:
+        if message:
             if now - _last_notify >= RATE_LIMIT:
                 _last_notify = now
                 subprocess.Popen(
-                    ["notify-send", "Claude Code", event],
+                    ["notify-send", "Claude Code", message],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                actions.append(f"\033[34mnotify\033[0m   {event}")
+                actions.append(f"\033[34mnotify\033[0m   {event} -> {message}")
             else:
                 actions.append(f"\033[90mthrottle\033[0m {event} (notify)")
 
         for action in actions:
             log(f"  {action}")
 
-        self.send_response(200)
-        self.end_headers()
+        if mpv_missing:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(b"mpv not installed\n")
+        else:
+            self.send_response(200)
+            self.end_headers()
 
     def log_message(self, *args, **kwargs):
         pass
@@ -202,6 +224,11 @@ def main():
         "--config",
         default=os.path.join(script_dir, "sounds.conf"),
         help="Path to sounds.conf (event -> sound mapping)",
+    )
+    parser.add_argument(
+        "--notify-config",
+        default=os.path.join(script_dir, "notify.conf"),
+        help="Path to notify.conf (event -> notification message)",
     )
     parser.add_argument(
         "--hooks",
@@ -224,8 +251,14 @@ def main():
     else:
         print(f"warning: config not found: {args.config}", file=sys.stderr)
 
-    active = {k: len(v) for k, v in sounds.items() if v}
-    print(f"active events: {active}")
+    if os.path.isfile(args.notify_config):
+        print(f"notify config: {args.notify_config}")
+        load_notify_config(args.notify_config)
+
+    active_sounds = {k: len(v) for k, v in sounds.items() if v}
+    active_notify = sorted(k for k, v in notifications.items() if v)
+    print(f"sounds: {active_sounds}")
+    print(f"notifications: {active_notify}")
 
     server = HTTPServer(("127.0.0.1", args.port), Handler)
     print(f"listening on http://127.0.0.1:{args.port}")
