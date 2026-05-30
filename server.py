@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import random
-import re
 import subprocess
 import sys
 import time
@@ -27,10 +26,10 @@ SOUNDS_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "packs", "peon", "sounds"
 )
 
-NOTIFY_EVENTS = {"notification", "permission_request"}
+NOTIFY_EVENTS = {"Notification", "PermissionRequest"}
 
 # Claude Code hook events that --hooks wires up. Each fires
-# `hook.sh <event>`, where <event> is the snake_case form of the name.
+# `hook.sh <event>` using the event name verbatim.
 HOOK_EVENTS = [
     "SessionStart", "SessionEnd", "Setup", "UserPromptSubmit",
     "Notification", "PermissionRequest", "PreToolUse", "PostToolUse",
@@ -84,12 +83,11 @@ def install_hooks(settings_path):
 
     entries = {}
     for name in HOOK_EVENTS:
-        event = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
         entries[name] = [{
             "matcher": "*",
             "hooks": [{
                 "type": "command",
-                "command": f"{hook_sh} {event}",
+                "command": f"{hook_sh} {name}",
                 "async": True,
             }],
         }]

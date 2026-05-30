@@ -65,7 +65,7 @@ Claude Code hook event
 At startup the server reads the event → sound mapping from `sounds.conf`, then
 plays a random sound from the matching event's list on each request.
 
-For `notification` and `permission_request` events, the server also sends a desktop notification via `notify-send`.
+For `Notification` and `PermissionRequest` events, the server also sends a desktop notification via `notify-send`.
 
 ## Sounds
 
@@ -75,12 +75,12 @@ Claude Code hook event to the files it can play. The defaults that ship enabled:
 
 | Hook Event | Peon lines |
 |------------|------------|
-| stop | "Ready to work?", "Something need doing?", "I can do that.", "Be happy to.", "Work, work.", "OK." |
-| notification, permission_request | "Something need doing?", "Hmm?", "What you want?", "Yes?" |
+| Stop | "Ready to work?", "Something need doing?", "I can do that.", "Be happy to.", "Work, work.", "OK." |
+| Notification, PermissionRequest | "Something need doing?", "Hmm?", "What you want?", "Yes?" |
 
-`sounds.conf` also ships commented-out mappings for `session_start`,
-`user_prompt_submit`, `subagent_stop`, `task_completed`, `post_tool_use_failure`,
-and `pre_compact` — uncomment a line to enable that event.
+`sounds.conf` also ships commented-out mappings for `SessionStart`,
+`UserPromptSubmit`, `SubagentStop`, `TaskCompleted`, `PostToolUseFailure`,
+and `PreCompact` — uncomment a line to enable that event.
 
 ## Configuration
 
@@ -93,15 +93,15 @@ listed files is picked at random per play. Bare filenames resolve against
 Map an event to one or more sounds:
 
 ```
-stop=PeonReady1.wav,PeonYes1.wav
-notification=/path/to/custom/sound.ogg
+Stop=PeonReady1.wav,PeonYes1.wav
+Notification=/path/to/custom/sound.ogg
 ```
 
 Silence an event (empty value), or comment it out to disable it entirely:
 
 ```
-pre_tool_use=
-#post_tool_use=...
+PreToolUse=
+#PostToolUse=...
 ```
 
 ### Custom port
@@ -109,7 +109,7 @@ pre_tool_use=
 Set `CLAUDE_AUDIO_PORT` in the hook script's environment to match the server port:
 
 ```bash
-CLAUDE_AUDIO_PORT=8080 ./hook.sh notification
+CLAUDE_AUDIO_PORT=8080 ./hook.sh Notification
 ```
 
 ## Files

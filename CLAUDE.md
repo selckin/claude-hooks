@@ -10,7 +10,7 @@ Audio and desktop notification system for Claude Code hooks. A Python HTTP serve
 
 - Python 3.10+ (stdlib only, no dependencies)
 - [mpv](https://mpv.io/) for audio playback
-- `notify-send` (optional, for desktop notifications on `notification`/`permission_request` events)
+- `notify-send` (optional, for desktop notifications on `Notification`/`PermissionRequest` events)
 
 ## Architecture
 
