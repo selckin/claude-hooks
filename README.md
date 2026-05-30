@@ -21,11 +21,10 @@ Options:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--port` | `7331` | Port to listen on |
-| `--pack` | `packs/peon` | Sound pack directory |
-| `--config` | `sounds.conf` | Per-event overrides file |
+| `--config` | `sounds.conf` | Event → sound mapping file |
 
 ```bash
-./server.py --pack packs/glados --port 8080
+./server.py --port 8080
 ```
 
 ### 2. Configure Claude Code hooks
@@ -61,46 +60,46 @@ Claude Code hook event
     -> server.py (plays sound via mpv, optionally sends notify-send)
 ```
 
-The server loads a sound pack at startup, maps pack categories to Claude Code event names, and plays a random sound from the matching category on each request.
+At startup the server reads the event → sound mapping from `sounds.conf`, then
+plays a random sound from the matching event's list on each request.
 
 For `notification` and `permission_request` events, the server also sends a desktop notification via `notify-send`.
 
-## Sound packs
+## Sounds
 
-Sound packs live in `packs/` and come from [openpeon](https://github.com/garysheng/openpeon). Each pack has a JSON manifest mapping categories to sound files.
+The sound files live in `packs/peon/sounds/` (the Orc Peon pack from
+[openpeon](https://github.com/garysheng/openpeon)). `sounds.conf` maps each
+Claude Code hook event to the files it can play. The defaults that ship enabled:
 
-Available packs:
+| Hook Event | Peon lines |
+|------------|------------|
+| stop | "Ready to work?", "Something need doing?", "I can do that.", "Be happy to.", "Work, work.", "OK." |
+| notification, permission_request | "Something need doing?", "Hmm?", "What you want?", "Yes?" |
 
-`dota2_axe`, `duke_nukem`, `glados`, `hd2_helldiver`, `peasant`, `peon`, `ra2_kirov`, `sc_battlecruiser`, `sc_kerrigan`, `tf2_engineer`
-
-### Category to event mapping
-
-| Pack Category | Hook Events |
-|---------------|-------------|
-| session.start | session_start |
-| task.acknowledge | user_prompt_submit |
-| task.complete | stop, task_completed, subagent_stop |
-| task.error | post_tool_use_failure |
-| input.required | notification, permission_request |
-| resource.limit | pre_compact |
+`sounds.conf` also ships commented-out mappings for `session_start`,
+`user_prompt_submit`, `subagent_stop`, `task_completed`, `post_tool_use_failure`,
+and `pre_compact` — uncomment a line to enable that event.
 
 ## Configuration
 
 ### sounds.conf
 
-Override or silence specific events. Applied after the pack is loaded.
+The event → sound mapping. Each line is `EVENT=file[,file,...]`; one of the
+listed files is picked at random per play. Bare filenames resolve against
+`packs/peon/sounds/`, absolute paths are used as-is.
 
-Override an event with a specific file:
+Map an event to one or more sounds:
 
 ```
-stop=/path/to/custom/sound.ogg
+stop=PeonReady1.wav,PeonYes1.wav
+notification=/path/to/custom/sound.ogg
 ```
 
-Silence an event (empty value):
+Silence an event (empty value), or comment it out to disable it entirely:
 
 ```
 pre_tool_use=
-post_tool_use=
+#post_tool_use=...
 ```
 
 ### Custom port
@@ -118,9 +117,9 @@ CLAUDE_AUDIO_PORT=8080 ./hook.sh notification
 | `server.py` | HTTP server, plays sounds via mpv, sends desktop notifications |
 | `hook.sh` | Thin curl wrapper called by Claude Code hooks |
 | `settings.json` | Claude Code hooks config (symlink to `~/.claude/settings.json`) |
-| `sounds.conf` | Per-event overrides and silencing |
+| `sounds.conf` | Event → sound mapping (source of truth) |
 | `claude-hooks.service` | systemd user service unit |
-| `packs/` | Sound packs with openpeon JSON manifests |
+| `packs/peon/sounds/` | Orc Peon `.wav` files referenced by `sounds.conf` |
 
 ## API
 

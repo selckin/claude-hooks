@@ -4,11 +4,10 @@
 Run this OUTSIDE bubblewrap. Claude hooks inside bubblewrap
 will curl this server to trigger sounds.
 
-Usage: ./server.py [--port 7331] [--pack packs/peon] [--config sounds.conf]
+Usage: ./server.py [--port 7331] [--config sounds.conf]
 """
 
 import argparse
-import json
 import os
 import random
 import subprocess
@@ -20,16 +19,10 @@ from urllib.parse import parse_qs, urlparse
 # event -> list of audio file paths (randomly picked on each play)
 sounds: dict[str, list[str]] = {}
 
-# Map pack categories to hook event names
-CATEGORY_MAP = {
-    "session.start": ["session_start"],
-    "task.acknowledge": ["user_prompt_submit"],
-    "task.complete": ["stop", "task_completed", "subagent_stop"],
-    "task.error": ["post_tool_use_failure"],
-    "input.required": ["notification", "permission_request"],
-    "resource.limit": ["pre_compact"],
-    "user.spam": [],
-}
+# Relative sound paths in sounds.conf resolve against this directory.
+SOUNDS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "packs", "peon", "sounds"
+)
 
 NOTIFY_EVENTS = {"notification", "permission_request"}
 
@@ -38,55 +31,34 @@ _last_play = 0.0
 _last_notify = 0.0
 
 
-def load_pack(pack_dir):
-    """Load a sound pack directory containing an openpeon.json manifest."""
-    manifest = None
-    for name in os.listdir(pack_dir):
-        if name.endswith(".json"):
-            with open(os.path.join(pack_dir, name)) as f:
-                manifest = json.load(f)
-            break
-    if not manifest:
-        print(f"error: no JSON manifest found in {pack_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"pack: {manifest.get('display_name', manifest.get('name', '?'))}")
-
-    for category, data in manifest.get("categories", {}).items():
-        files = []
-        for entry in data.get("sounds", []):
-            path = os.path.join(pack_dir, entry["file"])
-            if os.path.isfile(path):
-                files.append(path)
-            else:
-                print(f"  warning: {entry['file']}: not found", file=sys.stderr)
-
-        hook_events = CATEGORY_MAP.get(category, [])
-        if not hook_events:
-            print(f"  {category}: {len(files)} sounds (unmapped)")
-            continue
-
-        for event in hook_events:
-            sounds.setdefault(event, []).extend(files)
-        print(f"  {category} -> {', '.join(hook_events)}: {len(files)} sounds")
-
-
 def load_config(path):
-    """Load sounds.conf overrides. A single file per event (overrides pack)."""
+    """Load the event -> sound mapping from sounds.conf.
+
+    Each line is `EVENT=file[,file...]`; one of the files is picked at random
+    per play. Relative paths resolve against SOUNDS_DIR, absolute paths are
+    used as-is. An empty value silences the event. Blank lines and lines
+    starting with `#` are ignored, so commenting out an event disables it.
+    """
     with open(path) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             key, _, value = line.partition("=")
-            key, value = key.strip(), value.strip()
-            if key:
-                if not value:
-                    sounds[key] = []  # silence this event
-                elif not os.path.isfile(value):
-                    print(f"  warning: {key}: file not found: {value}", file=sys.stderr)
+            key = key.strip()
+            if not key:
+                continue
+            files = []
+            for item in value.split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                resolved = item if os.path.isabs(item) else os.path.join(SOUNDS_DIR, item)
+                if os.path.isfile(resolved):
+                    files.append(resolved)
                 else:
-                    sounds[key] = [value]  # override with single file
+                    print(f"  warning: {key}: file not found: {resolved}", file=sys.stderr)
+            sounds[key] = files
 
 
 def log(msg):
@@ -176,22 +148,17 @@ def main():
     parser = argparse.ArgumentParser(description="Audio notification server")
     parser.add_argument("--port", type=int, default=7331)
     parser.add_argument(
-        "--pack",
-        default=os.path.join(script_dir, "packs", "peon"),
-        help="Path to a sound pack directory (default: packs/peon)",
-    )
-    parser.add_argument(
         "--config",
         default=os.path.join(script_dir, "sounds.conf"),
-        help="Path to sounds.conf overrides (applied after pack)",
+        help="Path to sounds.conf (event -> sound mapping)",
     )
     args = parser.parse_args()
-
-    load_pack(args.pack)
 
     if os.path.isfile(args.config):
         print(f"config: {args.config}")
         load_config(args.config)
+    else:
+        print(f"warning: config not found: {args.config}", file=sys.stderr)
 
     active = {k: len(v) for k, v in sounds.items() if v}
     print(f"active events: {active}")
