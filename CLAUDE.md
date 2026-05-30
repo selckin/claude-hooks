@@ -23,9 +23,9 @@ Claude Code hook event
 - **`server.py`** — HTTP server on `127.0.0.1:7331`. Loads the event → sound mapping from `sounds.conf` and the event → notification mapping from `notify.conf` at startup. On `GET /play?event=<name>` it plays a random matching sound and/or sends a desktop notification (`notify-send`) — the two are independent.
 - **`hook.sh`** — Thin curl wrapper. Receives event name as `$1`, fires curl in background. Port configurable via `CLAUDE_AUDIO_PORT` env var (default 7331).
 - **`--hooks`** — `server.py --hooks` writes a `hook.sh <event>` entry for every Claude hook event (`HOOK_EVENTS`) into `~/.claude/settings.json`, merging into existing settings, then exits. Replaces the old hand-maintained `settings.json`.
-- **`sounds.conf`** — The event → sound mapping. `EVENT=file[,file,...]` maps an event to one or more sounds (one picked at random); bare filenames resolve against `packs/peon/sounds/`, absolute paths used as-is. `EVENT=` (empty) silences an event; a commented-out (`#`) line disables it.
+- **`sounds.conf`** — The event → sound mapping. `EVENT=file[,file,...]` maps an event to one or more sounds (one picked at random); bare filenames resolve against `sounds/`, absolute paths used as-is. `EVENT=` (empty) silences an event; a commented-out (`#`) line disables it.
 - **`notify.conf`** — The event → desktop notification mapping (same conventions as `sounds.conf`). `EVENT=message` fires a `notify-send` notification with that body (title always "Claude Code"). `EVENT=` silences; commenting out disables.
-- **`packs/peon/sounds/`** — The Orc Peon `.wav` sound files (from [openpeon](https://github.com/garysheng/openpeon)) referenced by `sounds.conf`.
+- **`sounds/`** — The Orc Peon `.wav` sound files (from [openpeon](https://github.com/garysheng/openpeon)) referenced by `sounds.conf`.
 - **`claude-hooks.service`** — systemd user service unit.
 
 ## Running
@@ -46,7 +46,7 @@ journalctl --user -u claude-hooks -f
 
 - Sound selection is random from the matching event's list (`random.choice`)
 - Two parallel dicts drive playback: `sounds` (`event -> list[filepath]`) and `notifications` (`event -> message`). For each, empty value = silenced, missing key = unmapped/ignored. A request acts on whichever the event appears in; if neither, it's a 204.
-- `load_config` populates `sounds` from `sounds.conf` (relative paths resolve against `SOUNDS_DIR` (`packs/peon/sounds/`); missing files are warned about and dropped). `load_notify_config` populates `notifications` from `notify.conf`.
+- `load_config` populates `sounds` from `sounds.conf` (relative paths resolve against `SOUNDS_DIR` (`sounds/`); missing files are warned about and dropped). `load_notify_config` populates `notifications` from `notify.conf`.
 - Audio and notifications throttle independently (`_last_play` vs `_last_notify`, `RATE_LIMIT` seconds each).
 - All mpv/notify-send calls are fire-and-forget via `subprocess.Popen` (non-blocking).
 - Server suppresses default HTTP request logging (`log_message` is a no-op); uses custom `log()` with timestamps and ANSI colors.

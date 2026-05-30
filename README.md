@@ -73,7 +73,7 @@ a notification, both, or neither.
 
 ## Sounds
 
-The sound files live in `packs/peon/sounds/` (the Orc Peon pack from
+The sound files live in `sounds/` (the Orc Peon pack from
 [openpeon](https://github.com/garysheng/openpeon)). `sounds.conf` maps each
 Claude Code hook event to the files it can play. The defaults that ship enabled:
 
@@ -92,7 +92,7 @@ and `PreCompact` — uncomment a line to enable that event.
 
 The event → sound mapping. Each line is `EVENT=file[,file,...]`; one of the
 listed files is picked at random per play. Bare filenames resolve against
-`packs/peon/sounds/`, absolute paths are used as-is.
+`sounds/`, absolute paths are used as-is.
 
 Map an event to one or more sounds:
 
@@ -137,7 +137,7 @@ CLAUDE_AUDIO_PORT=8080 ./hook.sh Notification
 | `sounds.conf` | Event → sound mapping |
 | `notify.conf` | Event → desktop notification mapping |
 | `claude-hooks.service` | systemd user service unit |
-| `packs/peon/sounds/` | Orc Peon `.wav` files referenced by `sounds.conf` |
+| `sounds/` | Orc Peon `.wav` files referenced by `sounds.conf` |
 
 ## API
 

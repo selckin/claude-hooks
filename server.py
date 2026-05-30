@@ -25,9 +25,7 @@ sounds: dict[str, list[str]] = {}
 notifications: dict[str, str] = {}
 
 # Relative sound paths in sounds.conf resolve against this directory.
-SOUNDS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "packs", "peon", "sounds"
-)
+SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
 
 # Claude Code hook events that --hooks wires up. Each fires
 # `hook.sh <event>` using the event name verbatim.
