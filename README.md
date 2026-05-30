@@ -2,6 +2,8 @@
 
 Audio and desktop notifications for Claude Code. A Python HTTP server runs outside the bubblewrap sandbox, and a shell hook script inside the sandbox curls it to trigger sounds and notifications on Claude Code events.
 
+A simple version of (and inspired by) [peon-ping](https://github.com/PeonPing/peon-ping).
+
 ## Requirements
 
 - Python 3.10+
