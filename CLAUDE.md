@@ -22,7 +22,7 @@ Claude Code hook event
 
 - **`server.py`** — HTTP server on `127.0.0.1:7331`. Loads the event → sound mapping from `sounds.conf` at startup, plays a random matching sound on `GET /play?event=<name>`. Desktop notifications sent for events in `NOTIFY_EVENTS`.
 - **`hook.sh`** — Thin curl wrapper. Receives event name as `$1`, fires curl in background. Port configurable via `CLAUDE_AUDIO_PORT` env var (default 7331).
-- **`settings.json`** — Claude Code hooks config. Symlink to `~/.claude/settings.json`. Maps hook events to `hook.sh` invocations.
+- **`--hooks`** — `server.py --hooks` writes a `hook.sh <event>` entry for every Claude hook event (`HOOK_EVENTS`) into `~/.claude/settings.json`, merging into existing settings, then exits. Replaces the old hand-maintained `settings.json`.
 - **`sounds.conf`** — The event → sound mapping (single source of truth). `EVENT=file[,file,...]` maps an event to one or more sounds (one picked at random); bare filenames resolve against `packs/peon/sounds/`, absolute paths used as-is. `EVENT=` (empty) silences an event; a commented-out (`#`) line disables it.
 - **`packs/peon/sounds/`** — The Orc Peon `.wav` sound files (from [openpeon](https://github.com/garysheng/openpeon)) referenced by `sounds.conf`.
 - **`claude-hooks.service`** — systemd user service unit.
@@ -33,6 +33,7 @@ Claude Code hook event
 ./server.py                          # default: port 7331, sounds.conf
 ./server.py --port 8080              # custom port
 ./server.py --config other.conf      # custom mapping file
+./server.py --hooks                  # install hooks into ~/.claude/settings.json, then exit
 
 # As systemd service:
 systemctl --user enable --now claude-hooks

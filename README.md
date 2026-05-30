@@ -29,13 +29,15 @@ Options:
 
 ### 2. Configure Claude Code hooks
 
-Copy or symlink `settings.json` to `~/.claude/settings.json`:
-
 ```bash
-ln -s ~/sources/claude-hooks/settings.json ~/.claude/settings.json
+./server.py --hooks
 ```
 
-Or merge the `hooks` section into your existing settings. The hooks call `hook.sh` with an event name, which fires a curl request to the server.
+This wires every Claude Code hook event to `hook.sh` in `~/.claude/settings.json`
+(merging into your existing settings — other keys are left untouched), then exits.
+Pass a path to target a different settings file: `./server.py --hooks /path/to/settings.json`.
+
+Each hook calls `hook.sh` with an event name, which fires a curl request to the server.
 
 ### 3. (Optional) Run as a systemd user service
 
@@ -114,9 +116,8 @@ CLAUDE_AUDIO_PORT=8080 ./hook.sh notification
 
 | File | Description |
 |------|-------------|
-| `server.py` | HTTP server, plays sounds via mpv, sends desktop notifications |
+| `server.py` | HTTP server (plays sounds, sends notifications); `--hooks` installs the Claude Code hooks |
 | `hook.sh` | Thin curl wrapper called by Claude Code hooks |
-| `settings.json` | Claude Code hooks config (symlink to `~/.claude/settings.json`) |
 | `sounds.conf` | Event → sound mapping (source of truth) |
 | `claude-hooks.service` | systemd user service unit |
 | `packs/peon/sounds/` | Orc Peon `.wav` files referenced by `sounds.conf` |

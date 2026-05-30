@@ -5,11 +5,14 @@ Run this OUTSIDE bubblewrap. Claude hooks inside bubblewrap
 will curl this server to trigger sounds.
 
 Usage: ./server.py [--port 7331] [--config sounds.conf]
+       ./server.py --hooks            # wire up Claude hooks, then exit
 """
 
 import argparse
+import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -25,6 +28,15 @@ SOUNDS_DIR = os.path.join(
 )
 
 NOTIFY_EVENTS = {"notification", "permission_request"}
+
+# Claude Code hook events that --hooks wires up. Each fires
+# `hook.sh <event>`, where <event> is the snake_case form of the name.
+HOOK_EVENTS = [
+    "SessionStart", "SessionEnd", "Setup", "UserPromptSubmit",
+    "Notification", "PermissionRequest", "PreToolUse", "PostToolUse",
+    "PostToolUseFailure", "SubagentStart", "SubagentStop", "Stop",
+    "TeammateIdle", "TaskCompleted", "PreCompact",
+]
 
 RATE_LIMIT = 5  # seconds between actions
 _last_play = 0.0
@@ -59,6 +71,47 @@ def load_config(path):
                 else:
                     print(f"  warning: {key}: file not found: {resolved}", file=sys.stderr)
             sounds[key] = files
+
+
+def install_hooks(settings_path):
+    """Wire every Claude hook event to hook.sh in the Claude settings file.
+
+    Merges into the existing settings: other top-level keys and any hook
+    events we don't manage are preserved; our event entries are replaced.
+    """
+    settings_path = os.path.abspath(os.path.expanduser(settings_path))
+    hook_sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hook.sh")
+
+    entries = {}
+    for name in HOOK_EVENTS:
+        event = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        entries[name] = [{
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": f"{hook_sh} {event}",
+                "async": True,
+            }],
+        }]
+
+    settings = {}
+    if os.path.isfile(settings_path):
+        with open(settings_path) as f:
+            try:
+                settings = json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"error: {settings_path} is not valid JSON: {e}", file=sys.stderr)
+                sys.exit(1)  # abort before overwriting the user's settings
+
+    settings.setdefault("hooks", {}).update(entries)
+
+    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+    if os.path.islink(settings_path):
+        os.unlink(settings_path)  # replace a symlink with a real file
+    with open(settings_path, "w") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")
+    print(f"configured {len(entries)} hooks in {settings_path}")
 
 
 def log(msg):
@@ -152,7 +205,20 @@ def main():
         default=os.path.join(script_dir, "sounds.conf"),
         help="Path to sounds.conf (event -> sound mapping)",
     )
+    parser.add_argument(
+        "--hooks",
+        nargs="?",
+        const="~/.claude/settings.json",
+        default=None,
+        metavar="SETTINGS",
+        help="Install hook entries into the Claude settings file "
+             "(default: ~/.claude/settings.json), then exit",
+    )
     args = parser.parse_args()
+
+    if args.hooks:
+        install_hooks(args.hooks)
+        return
 
     if os.path.isfile(args.config):
         print(f"config: {args.config}")
