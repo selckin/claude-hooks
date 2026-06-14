@@ -37,6 +37,7 @@ Claude Code hook event
 ./server.py --port 8080              # custom port
 ./server.py --config other.conf      # custom sound mapping file
 ./server.py --notify-config n.conf   # custom notification mapping file
+./server.py --log-level verbose      # also log no-action hooks (default: only actions)
 ./server.py --hooks                  # install hooks into ~/.claude/settings.json, then exit
 
 # As systemd service:
@@ -52,3 +53,4 @@ journalctl --user -u claude-hooks -f
 - Audio and notifications throttle independently (`_last_play` vs `_last_notify`, `RATE_LIMIT` seconds each).
 - All mpv/notify-send calls are fire-and-forget via `subprocess.Popen` (non-blocking).
 - Server suppresses default HTTP request logging (`log_message` is a no-op); uses custom `log()` with timestamps and ANSI colors.
+- Console verbosity is controlled by `--log-level` (or the `CLAUDE_HOOKS_LOG_LEVEL` env var), defaulting to `default`. `default` logs only real actions (play/notify/error/db error); `verbose` additionally logs hooks that take no action (silenced, unmapped, throttled) via the `vlog()` helper. The SQLite hook log records every call regardless of level.

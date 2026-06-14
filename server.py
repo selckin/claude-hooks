@@ -42,6 +42,17 @@ RATE_LIMIT = 5  # seconds between actions
 _last_play = 0.0
 _last_notify = 0.0
 
+# Console verbosity. "default" logs only real actions (play/notify/error);
+# "verbose" also logs hooks that take no action (silenced, unmapped,
+# throttled). Overridable via --log-level or CLAUDE_HOOKS_LOG_LEVEL.
+LOG_LEVELS = ("default", "verbose")
+_env_level = os.environ.get("CLAUDE_HOOKS_LOG_LEVEL", "default")
+if _env_level not in LOG_LEVELS:
+    print(f"warning: ignoring invalid CLAUDE_HOOKS_LOG_LEVEL={_env_level!r}, "
+          f"using 'default'", file=sys.stderr)
+    _env_level = "default"
+LOG_LEVEL = _env_level
+
 # SQLite log of every hook call (read by the waybar claude-hooks module).
 # Lives under ~/.claude so it's reachable from both the server and the host.
 DB_PATH = os.path.expanduser("~/.claude/hooks.db")
@@ -265,6 +276,12 @@ def log(msg):
     print(f"\033[90m{ts}\033[0m {msg}")
 
 
+def vlog(msg):
+    """Log only at the "verbose" level — for hooks that take no action."""
+    if LOG_LEVEL == "verbose":
+        log(msg)
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -293,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle(self, event, payload):
         if not event:
-            log(f"  \033[33mignored\033[0m  no event specified")
+            vlog(f"  \033[33mignored\033[0m  no event specified")
             self.send_response(204)
             self.end_headers()
             return
@@ -305,9 +322,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if not sound_files and not message:
             if event in sounds or event in notifications:
-                log(f"  \033[90msilenced\033[0m {event}")
+                vlog(f"  \033[90msilenced\033[0m {event}")
             else:
-                log(f"  \033[33mignored\033[0m  {event} (unmapped)")
+                vlog(f"  \033[33mignored\033[0m  {event} (unmapped)")
             self.send_response(204)
             self.end_headers()
             return
@@ -327,13 +344,13 @@ class Handler(BaseHTTPRequestHandler):
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
-                    actions.append(f"\033[32mplay\033[0m     {event} -> {os.path.basename(path)}")
+                    actions.append((False, f"\033[32mplay\033[0m     {event} -> {os.path.basename(path)}"))
                 except FileNotFoundError:
                     # Don't let a missing mpv suppress the notification below.
                     mpv_missing = True
-                    actions.append(f"\033[31merror\033[0m    {event}: mpv not installed")
+                    actions.append((False, f"\033[31merror\033[0m    {event}: mpv not installed"))
             else:
-                actions.append(f"\033[90mthrottle\033[0m {event} (audio)")
+                actions.append((True, f"\033[90mthrottle\033[0m {event} (audio)"))
 
         if message:
             if now - _last_notify >= RATE_LIMIT:
@@ -343,12 +360,13 @@ class Handler(BaseHTTPRequestHandler):
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                actions.append(f"\033[34mnotify\033[0m   {event} -> {message}")
+                actions.append((False, f"\033[34mnotify\033[0m   {event} -> {message}"))
             else:
-                actions.append(f"\033[90mthrottle\033[0m {event} (notify)")
+                actions.append((True, f"\033[90mthrottle\033[0m {event} (notify)"))
 
-        for action in actions:
-            log(f"  {action}")
+        # verbose=True entries (throttles) only show at the "verbose" level.
+        for verbose, action in actions:
+            (vlog if verbose else log)(f"  {action}")
 
         if mpv_missing:
             self.send_response(500)
@@ -363,6 +381,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global LOG_LEVEL
     script_dir = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser(description="Audio notification server")
     parser.add_argument("--port", type=int, default=7331)
@@ -375,6 +394,15 @@ def main():
         "--notify-config",
         default=os.path.join(script_dir, "notify.conf"),
         help="Path to notify.conf (event -> notification message)",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=LOG_LEVELS,
+        default=LOG_LEVEL,
+        help="Console verbosity. 'default' logs only real actions "
+             "(play/notify/error); 'verbose' also logs no-action hooks "
+             "(silenced/unmapped/throttled). Default from "
+             "CLAUDE_HOOKS_LOG_LEVEL, else 'default'.",
     )
     parser.add_argument(
         "--hooks",
@@ -390,6 +418,9 @@ def main():
     if args.hooks:
         install_hooks(args.hooks)
         return
+
+    LOG_LEVEL = args.log_level
+    print(f"log level: {LOG_LEVEL}")
 
     if os.path.isfile(args.config):
         print(f"config: {args.config}")
