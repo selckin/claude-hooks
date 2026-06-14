@@ -13,6 +13,7 @@ import datetime
 import json
 import os
 import random
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -418,6 +419,13 @@ def main():
     if args.hooks:
         install_hooks(args.hooks)
         return
+
+    # mpv/notify-send are fire-and-forget: we Popen them and never wait().
+    # Without this, each exited child lingers as a zombie (<defunct>) because
+    # the long-running server never reaps it. SIG_IGN tells the kernel to
+    # auto-reap, so no zombies accumulate. Safe here only because nothing in
+    # this server ever calls .wait()/.poll() on a child.
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
     LOG_LEVEL = args.log_level
     print(f"log level: {LOG_LEVEL}")
