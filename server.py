@@ -30,13 +30,35 @@ notifications: dict[str, str] = {}
 # Relative sound paths in sounds.conf resolve against this directory.
 SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sounds")
 
-# Claude Code hook events that --hooks wires up. Each fires
-# `hook.sh <event>` using the event name verbatim.
+# Every Claude Code hook event, wired up by --hooks. Each fires
+# `hook.sh <event>` using the event name verbatim. This is the full set
+# documented at https://code.claude.com/docs/en/hooks.md — Claude Code has no
+# event-name wildcard, so each event must be listed explicitly; add any newly
+# introduced event here. Events with no sound/notification mapping are still
+# logged to SQLite and otherwise no-op, so listing them all is free.
 HOOK_EVENTS = [
-    "SessionStart", "SessionEnd", "Setup", "UserPromptSubmit",
-    "Notification", "PermissionRequest", "PreToolUse", "PostToolUse",
-    "PostToolUseFailure", "SubagentStart", "SubagentStop", "Stop",
-    "TeammateIdle", "TaskCompleted", "PreCompact",
+    # Session lifecycle
+    "SessionStart", "Setup", "SessionEnd",
+    # User input
+    "UserPromptSubmit", "UserPromptExpansion",
+    # Tool execution
+    "PreToolUse", "PermissionRequest", "PermissionDenied",
+    "PostToolUse", "PostToolUseFailure", "PostToolBatch",
+    # Response / completion
+    "Stop", "StopFailure",
+    # Notification / display
+    "Notification", "MessageDisplay",
+    # Subagents / tasks
+    "SubagentStart", "SubagentStop", "TaskCreated", "TaskCompleted",
+    "TeammateIdle",
+    # Configuration / filesystem
+    "InstructionsLoaded", "ConfigChange", "CwdChanged", "FileChanged",
+    # Worktrees
+    "WorktreeCreate", "WorktreeRemove",
+    # Context compaction
+    "PreCompact", "PostCompact",
+    # MCP elicitation
+    "Elicitation", "ElicitationResult",
 ]
 
 RATE_LIMIT = 5  # seconds between actions
@@ -232,25 +254,37 @@ def load_notify_config(path):
                 notifications[key] = value.strip()
 
 
+def _is_managed_entry(entry, event):
+    """True if `entry` is one --hooks installed for `event`.
+
+    Identified by a command hook that runs `.../hook.sh <event>`, regardless of
+    the checkout path. This lets a re-run replace our own entry in place
+    (idempotent, and picks up a moved checkout) while leaving every other hook
+    registered on the event untouched.
+    """
+    if not isinstance(entry, dict):
+        return False
+    for h in entry.get("hooks", []):
+        if not isinstance(h, dict) or h.get("type") != "command":
+            continue
+        parts = (h.get("command") or "").split()
+        if len(parts) >= 2 and parts[-1] == event and os.path.basename(parts[-2]) == "hook.sh":
+            return True
+    return False
+
+
 def install_hooks(settings_path):
     """Wire every Claude hook event to hook.sh in the Claude settings file.
 
-    Merges into the existing settings: other top-level keys and any hook
-    events we don't manage are preserved; our event entries are replaced.
+    Merges into the existing settings without clobbering anything else: other
+    top-level keys, hook events we don't list, and other hooks registered on an
+    event we do list (e.g. a user's own SessionStart hook) are all preserved.
+    Only our own previously-installed hook.sh entry for each event is replaced,
+    so re-running is idempotent. A symlinked settings file (e.g. into a dotfiles
+    repo) is written through, keeping the link intact.
     """
     settings_path = os.path.abspath(os.path.expanduser(settings_path))
     hook_sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hook.sh")
-
-    entries = {}
-    for name in HOOK_EVENTS:
-        entries[name] = [{
-            "matcher": "*",
-            "hooks": [{
-                "type": "command",
-                "command": f"{hook_sh} {name}",
-                "async": True,
-            }],
-        }]
 
     settings = {}
     if os.path.isfile(settings_path):
@@ -261,15 +295,25 @@ def install_hooks(settings_path):
                 print(f"error: {settings_path} is not valid JSON: {e}", file=sys.stderr)
                 sys.exit(1)  # abort before overwriting the user's settings
 
-    settings.setdefault("hooks", {}).update(entries)
+    hooks_cfg = settings.setdefault("hooks", {})
+    for name in HOOK_EVENTS:
+        event_hooks = hooks_cfg.setdefault(name, [])
+        # Drop only our own prior entry; keep every other hook on this event.
+        event_hooks[:] = [e for e in event_hooks if not _is_managed_entry(e, name)]
+        event_hooks.append({
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": f"{hook_sh} {name}",
+                "async": True,
+            }],
+        })
 
     os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-    if os.path.islink(settings_path):
-        os.unlink(settings_path)  # replace a symlink with a real file
     with open(settings_path, "w") as f:
         json.dump(settings, f, indent=2)
         f.write("\n")
-    print(f"configured {len(entries)} hooks in {settings_path}")
+    print(f"configured {len(HOOK_EVENTS)} hooks in {settings_path}")
 
 
 def log(msg):
